@@ -36,7 +36,6 @@
     position:relative;
   }
   body::before {
-    /* animated aurora mesh */
     content:"";
     position:fixed; inset:-20%;
     background:
@@ -108,7 +107,6 @@
     overflow:hidden;
   }
   .card::after {
-    /* sheen sweep */
     content:"";
     position:absolute; inset:0; pointer-events:none;
     background: linear-gradient(115deg, transparent 40%, rgba(255,255,255,0.06) 50%, transparent 60%);
@@ -210,14 +208,12 @@
     font-weight:700; letter-spacing:1px;
   }
 
-  /* reduce-motion respect */
   @media (prefers-reduced-motion: reduce) {
     body::before { animation:none; }
     .card, .card::after, button { transition:none; }
     .card h2::before { animation:none; }
   }
 
-  /* fps hint — purely visual, no jank */
   .fps {
     position:fixed; top:10px; right:12px; z-index:5;
     font-size:10px; color:var(--dim); letter-spacing:.5px;
@@ -308,6 +304,18 @@
       <div class="out" id="batchOut">—</div>
     </div>
 
+    <div class="card" data-tilt style="grid-column: 1 / -1;">
+      <h2>discord · webhook push</h2>
+      <p class="hint">envoie les résultats (batch ou check simple) dans ton salon discord. coller l'url du webhook.</p>
+      <input id="whUrl" placeholder="https://discord.com/api/webhooks/…/…" autocomplete="off" />
+      <input id="whName" placeholder="bot name (optionnel) — ex: account.intel" autocomplete="off" />
+      <div class="row">
+        <button onclick="pushToWebhook('batch')" id="whBatchBtn">envoyer · batch</button>
+        <button onclick="pushToWebhook('last')"  id="whLastBtn"  class="ghost" disabled>envoyer · dernier résultat</button>
+      </div>
+      <div class="out" id="whOut">—</div>
+    </div>
+
   </div>
 
   <footer>
@@ -317,21 +325,24 @@
 </div>
 
 <script>
-/* ---------- helpers ---------- */
+/* ============================================================
+   helpers
+   ============================================================ */
 const $ = id => document.getElementById(id);
 const setOut = (id, txt, cls = "dim") => {
   const e = $(id); e.textContent = txt; e.className = "out " + cls;
 };
 
-/* ---------- 3d tilt (rAF-throttled, gpu composited) ---------- */
+/* ============================================================
+   3d tilt (rAF-throttled, gpu composited)
+   ============================================================ */
 const tiltCards = document.querySelectorAll("[data-tilt]");
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 if (!reduceMotion && matchMedia("(pointer:fine)").matches) {
-  const MAX = 7;               // degrees
-  const target = new Map();    // el -> {rx, ry, tx, ty, hx, hy}
+  const MAX = 7;
+  const target = new Map();
   let rafId = null;
-
   const lerp = (a, b, t) => a + (b - a) * t;
 
   function tick() {
@@ -349,28 +360,28 @@ if (!reduceMotion && matchMedia("(pointer:fine)").matches) {
     if (active) rafId = requestAnimationFrame(tick);
     else rafId = null;
   }
-
   const kick = () => { if (rafId === null) rafId = requestAnimationFrame(tick); };
 
   tiltCards.forEach(el => {
-    target.set(el, { rx: 0, ry: 0, tx: 0, ty: 0 });
+    target.set(el, { rx:0, ry:0, tx:0, ty:0 });
     el.addEventListener("pointermove", e => {
       const r = el.getBoundingClientRect();
-      const px = (e.clientX - r.left) / r.width;   // 0..1
-      const py = (e.clientY - r.top) / r.height;   // 0..1
+      const px = (e.clientX - r.left) / r.width;
+      const py = (e.clientY - r.top) / r.height;
       const s = target.get(el);
       s.tx = (0.5 - py) * MAX * 2;
       s.ty = (px - 0.5) * MAX * 2;
       kick();
-    }, { passive: true });
+    }, { passive:true });
     el.addEventListener("pointerleave", () => {
-      const s = target.get(el);
-      s.tx = 0; s.ty = 0; kick();
-    }, { passive: true });
+      const s = target.get(el); s.tx = 0; s.ty = 0; kick();
+    }, { passive:true });
   });
 }
 
-/* ---------- fps meter (visual only) ---------- */
+/* ============================================================
+   fps meter (visual only)
+   ============================================================ */
 (function fpsMeter() {
   const el = $("fps");
   let frames = 0, last = performance.now();
@@ -386,15 +397,16 @@ if (!reduceMotion && matchMedia("(pointer:fine)").matches) {
   requestAnimationFrame(loop);
 })();
 
-/* ---------- email ---------- */
-async function checkEmail() {
+/* ============================================================
+   raw check implementations (prefixed so wrappers don't collide)
+   ============================================================ */
+async function _raw_checkEmail() {
   const email = $("email").value.trim();
   const re = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
   if (!re.test(email)) return setOut("emailOut", "✗ invalid syntax", "bad");
 
   const domain = email.split("@")[1];
   setOut("emailOut", "querying MX…", "dim");
-
   try {
     const r = await fetch(
       `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(domain)}&type=MX`,
@@ -403,7 +415,6 @@ async function checkEmail() {
     const j = await r.json();
     const mx = (j.Answer || []).filter(a => a.type === 15);
     if (!mx.length) return setOut("emailOut", `✗ syntax ok, no MX for ${domain}`, "bad");
-
     const hosts = mx.map(a => "  " + a.data.split(" ").pop()).join("\n");
     setOut("emailOut", `✓ syntax ok\n✓ MX (${mx.length}):\n${hosts}`, "ok");
   } catch (e) {
@@ -411,8 +422,7 @@ async function checkEmail() {
   }
 }
 
-/* ---------- github ---------- */
-async function checkGithub() {
+async function _raw_checkGithub() {
   const u = $("ghUser").value.trim();
   if (!u) return setOut("ghOut", "enter a username", "dim");
   setOut("ghOut", "querying…", "dim");
@@ -429,8 +439,7 @@ async function checkGithub() {
   }
 }
 
-/* ---------- roblox ---------- */
-async function checkRoblox() {
+async function _raw_checkRoblox() {
   const u = $("rbUser").value.trim();
   if (!u) return setOut("rbOut", "enter a username", "dim");
   setOut("rbOut", "querying…", "dim");
@@ -449,8 +458,7 @@ async function checkRoblox() {
   }
 }
 
-/* ---------- hibp ---------- */
-async function checkHibp() {
+async function _raw_checkHibp() {
   const key = $("hibpKey").value.trim();
   const email = $("hibpEmail").value.trim();
   if (!key)   return setOut("hibpOut", "need api key", "warn");
@@ -472,14 +480,12 @@ async function checkHibp() {
   }
 }
 
-/* ---------- jwt ---------- */
-function inspectJwt() {
+function _raw_inspectJwt() {
   const raw = $("jwt").value.trim();
   if (!raw) return setOut("jwtOut", "paste a token", "dim");
   const tok = raw.includes("=") ? raw.split("=").slice(1).join("=") : raw;
   const parts = tok.split(".");
   if (parts.length !== 3) return setOut("jwtOut", "✗ not a JWT (3 segments expected)", "bad");
-
   try {
     const b64 = s => JSON.parse(atob(
       s.replace(/-/g,"+").replace(/_/g,"/").padEnd(s.length + (4 - s.length % 4) % 4, "=")
@@ -487,28 +493,23 @@ function inspectJwt() {
     const header  = b64(parts[0]);
     const payload = b64(parts[1]);
     const lines = [];
-
     lines.push(`alg: ${header.alg || "?"}  typ: ${header.typ || "?"}`);
     if (header.alg === "none") lines.push("⚠ alg=none — unsigned");
-
     if (payload.exp) {
       const exp = new Date(payload.exp * 1000);
       const expired = exp < new Date();
       lines.push(`exp: ${exp.toISOString()} ${expired ? "— EXPIRED" : "— valid"}`);
     } else lines.push("exp: missing");
-
     if (payload.iat) lines.push(`iat: ${new Date(payload.iat * 1000).toISOString()}`);
     if (payload.iss) lines.push(`iss: ${payload.iss}`);
     if (payload.sub) lines.push(`sub: ${payload.sub}`);
     if (payload.aud) lines.push(`aud: ${JSON.stringify(payload.aud)}`);
-
     const known = ["exp","iat","nbf","iss","sub","aud","jti"];
     const extra = Object.keys(payload).filter(k => !known.includes(k));
     if (extra.length) {
       lines.push("claims:");
       for (const k of extra) lines.push(`  ${k}: ${JSON.stringify(payload[k])}`);
     }
-
     const expired = payload.exp && payload.exp * 1000 < Date.now();
     setOut("jwtOut", lines.join("\n"), expired ? "bad" : "ok");
   } catch (e) {
@@ -516,15 +517,14 @@ function inspectJwt() {
   }
 }
 
-/* ---------- password ---------- */
-function checkPw() {
+function _raw_checkPw() {
   const p = $("pw").value;
   if (!p) return setOut("pwOut", "enter something", "dim");
   let pool = 0;
   if (/[a-z]/.test(p)) pool += 26;
   if (/[A-Z]/.test(p)) pool += 26;
   if (/[0-9]/.test(p)) pool += 10;
-  if (/[^a-zA-Z0-9]/.test(p)) pool += 33;
+    if (/[^a-zA-Z0-9]/.test(p)) pool += 33;
   const entropy = p.length * Math.log2(pool || 1);
   let label, cls;
   if (entropy < 28)      { label = "very weak";  cls = "bad"; }
@@ -537,7 +537,51 @@ function checkPw() {
     cls);
 }
 
-/* ---------- batch ---------- */
+/* ============================================================
+   wrappers — call raw, then record lastResult for the webhook
+   ============================================================ */
+let lastResult = null;
+
+async function checkEmail() {
+  await _raw_checkEmail();
+  const cls = $("emailOut").className.replace("out ", "");
+  lastResult = { type:"email", input:$("email").value.trim(), status: cls==="ok"?"valid":cls==="bad"?"invalid":"unknown", detail:$("emailOut").textContent };
+  $("whLastBtn").disabled = false;
+}
+async function checkGithub() {
+  await _raw_checkGithub();
+  const cls = $("ghOut").className.replace("out ", "");
+  lastResult = { type:"github", input:$("ghUser").value.trim(), status: cls==="ok"?"valid":cls==="bad"?"invalid":"unknown", detail:$("ghOut").textContent };
+  $("whLastBtn").disabled = false;
+}
+async function checkRoblox() {
+  await _raw_checkRoblox();
+  const cls = $("rbOut").className.replace("out ", "");
+  lastResult = { type:"roblox", input:$("rbUser").value.trim(), status: cls==="ok"?"valid":cls==="bad"?"invalid":"unknown", detail:$("rbOut").textContent };
+  $("whLastBtn").disabled = false;
+}
+async function checkHibp() {
+  await _raw_checkHibp();
+  const cls = $("hibpOut").className.replace("out ", "");
+  lastResult = { type:"hibp", input:$("hibpEmail").value.trim(), status: cls==="ok"?"clean":cls==="bad"?"pwned":"unknown", detail:$("hibpOut").textContent };
+  $("whLastBtn").disabled = false;
+}
+function inspectJwt() {
+  _raw_inspectJwt();
+  const cls = $("jwtOut").className.replace("out ", "");
+  lastResult = { type:"jwt", input:"(token)", status: cls==="ok"?"valid":cls==="bad"?"invalid":"unknown", detail:$("jwtOut").textContent };
+  $("whLastBtn").disabled = false;
+}
+function checkPw() {
+  _raw_checkPw();
+  const cls = $("pwOut").className.replace("out ", "");
+  lastResult = { type:"password", input:"(redacted)", status: cls==="ok"?"strong":cls==="warn"?"moderate":"weak", detail:$("pwOut").textContent };
+  $("whLastBtn").disabled = false;
+}
+
+/* ============================================================
+   batch
+   ============================================================ */
 let batchResults = [];
 
 async function runBatch() {
@@ -606,6 +650,9 @@ async function runBatch() {
   $("exportBtn").disabled = false;
 }
 
+/* ============================================================
+   export .txt
+   ============================================================ */
 function exportTxt() {
   if (!batchResults.length) return;
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -630,6 +677,123 @@ function exportTxt() {
   a.download = `account-intel_${type}_${stamp}.txt`;
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+/* ============================================================
+   discord webhook push
+   ============================================================ */
+const COLORS = {
+  valid: 0x4ade80, invalid: 0xf87171, unknown: 0xfbbf24,
+  pwned: 0xf87171, clean: 0x4ade80,
+  strong: 0x4ade80, weak: 0xf87171, moderate: 0xfbbf24
+};
+
+function buildBatchEmbed() {
+  const valid   = batchResults.filter(r => r.status === "valid").length;
+  const invalid = batchResults.filter(r => r.status === "invalid").length;
+  const unknown = batchResults.length - valid - invalid;
+  const type    = $("batchType").value;
+
+  const lines = batchResults.map(r => {
+    const mark = r.status === "valid" ? "🟢" : r.status === "invalid" ? "🔴" : "🟡";
+    return `${mark} \`${r.input}\` — ${r.detail}`;
+  });
+  const chunks = [];
+  let buf = "";
+  for (const l of lines) {
+    if ((buf + "\n" + l).length > 1000) { chunks.push(buf); buf = l; }
+    else buf = buf ? buf + "\n" + l : l;
+  }
+  if (buf) chunks.push(buf);
+
+  return {
+    username: $("whName").value.trim() || "account.intel",
+    avatar_url: "https://cdn.discordapp.com/embed/avatars/0.png",
+    embeds: [{
+      title: "▸ BATCH RUN COMPLETE",
+      description:
+        `\`\`\`ini\n` +
+        `[ target   ] ${type}\n` +
+        `[ total    ] ${batchResults.length}\n` +
+        `[ valid    ] ${valid}\n` +
+        `[ invalid  ] ${invalid}\n` +
+        `[ unknown  ] ${unknown}\n` +
+        `\`\`\``,
+      color: valid ? COLORS.valid : COLORS.invalid,
+      fields: chunks.map((c, i) => ({
+        name: i === 0 ? "results" : `results (${i + 1})`,
+        value: c,
+        inline: false
+      })).slice(0, 24),
+      footer: { text: "account.intel · created by Husey" },
+      timestamp: new Date().toISOString()
+    }]
+  };
+}
+
+function buildSingleEmbed() {
+  if (!lastResult) return null;
+  return {
+    username: $("whName").value.trim() || "account.intel",
+    avatar_url: "https://cdn.discordapp.com/embed/avatars/0.png",
+    embeds: [{
+      title: `▸ CHECK · ${lastResult.type.toUpperCase()}`,
+      description:
+        `\`\`\`ini\n` +
+        `[ input    ] ${lastResult.input}\n` +
+        `[ status   ] ${lastResult.status}\n` +
+        `\`\`\``,
+      color: COLORS[lastResult.status] || COLORS.unknown,
+      fields: [{
+        name: "detail",
+        value: "```\n" + lastResult.detail.slice(0, 1000) + "\n```",
+        inline: false
+      }],
+      footer: { text: "account.intel · created by Husey" },
+      timestamp: new Date().toISOString()
+    }]
+  };
+}
+
+async function pushToWebhook(mode) {
+  const url = $("whUrl").value.trim();
+  if (!url || !url.startsWith("https://discord.com/api/webhooks/")) {
+    return setOut("whOut", "✗ need a valid discord webhook url", "bad");
+  }
+
+  let payload;
+  if (mode === "batch") {
+    if (!batchResults.length) {
+      return setOut("whOut", "✗ no batch results to send — run a batch first", "warn");
+    }
+    payload = buildBatchEmbed();
+  } else {
+    if (!lastResult) {
+      return setOut("whOut", "✗ no single check to send", "warn");
+    }
+    payload = buildSingleEmbed();
+  }
+
+  setOut("whOut", "pushing…", "dim");
+
+  try {
+    const r = await fetch(url + "?wait=true", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (r.status === 204 || r.ok) {
+      setOut("whOut", `✓ envoyé · ${mode === "batch" ? batchResults.length + " entrées" : "1 résultat"}`, "ok");
+    } else if (r.status === 429) {
+      const j = await r.json().catch(() => ({}));
+      setOut("whOut", `⚠ rate limited — retry in ${j.retry_after || "?"}s`, "warn");
+    } else {
+      setOut("whOut", `✗ discord ${r.status}`, "bad");
+    }
+  } catch (e) {
+    setOut("whOut", `✗ ${e.message}`, "bad");
+  }
 }
 </script>
 </body>
